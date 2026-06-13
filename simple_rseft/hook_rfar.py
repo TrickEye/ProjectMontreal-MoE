@@ -72,11 +72,37 @@ def topk_expert_mask(router_logits: torch.Tensor, top_k: int) -> np.ndarray:
     Returns:
         mask: [S, E] binary numpy array
     """
+    # Normalize shape to [S, E] for robust indexing across model variants.
+    if router_logits.dim() == 1:
+        router_logits = router_logits.unsqueeze(0)
+    elif router_logits.dim() == 3:
+        # Keep first batch if a batch dimension is present.
+        router_logits = router_logits[0]
+    elif router_logits.dim() != 2:
+        raise ValueError(
+            f"Unexpected router_logits shape {tuple(router_logits.shape)}; expected 1D/2D/3D"
+        )
+
+    top_k = max(1, min(int(top_k), int(router_logits.shape[-1])))
     top_indices = torch.argsort(router_logits, dim=-1)[:, -top_k:]  # [S, K]
     mask = np.zeros((router_logits.shape[0], router_logits.shape[1]), dtype=bool)
     for t in range(router_logits.shape[0]):
         mask[t, top_indices[t].cpu().numpy()] = True
     return mask
+
+
+def _normalize_router_layer_logits(layer_logits: torch.Tensor) -> torch.Tensor:
+    """Normalize one layer's router logits to shape [S, E]."""
+    if layer_logits.dim() == 3:
+        # [B, S, E] -> [S, E]
+        return layer_logits[0]
+    if layer_logits.dim() == 2:
+        # already [S, E]
+        return layer_logits
+    if layer_logits.dim() == 1:
+        # [E] -> single-token [1, E]
+        return layer_logits.unsqueeze(0)
+    raise ValueError(f"Unexpected per-layer router logits shape: {tuple(layer_logits.shape)}")
 
 
 def collect_expert_activations(model, tokenizer, samples: list[dict], device: str = "cuda",
@@ -134,9 +160,13 @@ def collect_expert_activations(model, tokenizer, samples: list[dict], device: st
             if len(router_logits_list) == 0:
                 continue
 
+            normalized_router_logits = [
+                _normalize_router_layer_logits(rl) for rl in router_logits_list
+            ]
+
             # Resolve runtime dimensions from router output to avoid stale hardcoding.
-            runtime_num_layers = len(router_logits_list)
-            runtime_num_experts = int(router_logits_list[0].shape[-1])
+            runtime_num_layers = len(normalized_router_logits)
+            runtime_num_experts = int(normalized_router_logits[0].shape[-1])
             num_layers = runtime_num_layers
             num_experts = runtime_num_experts
             # Prediction logits: [B=1, S, V]
@@ -152,9 +182,9 @@ def collect_expert_activations(model, tokenizer, samples: list[dict], device: st
 
             # Build per-layer expert activation mask
             layer_masks = []
-            for lv, rl in enumerate(router_logits_list):
-                # rl: [1, S, E]
-                emask = topk_expert_mask(rl[0].cpu(), min(num_act_experts, rl.shape[-1]))
+            for lv, rl in enumerate(normalized_router_logits):
+                # rl: [S, E]
+                emask = topk_expert_mask(rl.cpu(), min(num_act_experts, rl.shape[-1]))
                 layer_masks.append(emask)
 
             # Stack: [L, S, E]
