@@ -29,23 +29,54 @@ def _has_suffix(module_names: list[str], suffix: str) -> bool:
     """Whether any runtime module name contains the given suffix string."""
     return any(suffix in name for name in module_names)
 
+
+def _find_linear_modules_in_parent(model, parent_name: str) -> list[str]:
+    """Find all Linear module full paths within a parent module."""
+    target_modules = []
+    parent_module = None
+    for name, mod in model.named_modules():
+        if name == parent_name:
+            parent_module = mod
+            break
+
+    if parent_module is not None:
+        for name, mod in parent_module.named_modules():
+            if isinstance(mod, torch.nn.Linear) and name != "":
+                full_name = f"{parent_name}.{name}".lstrip(".")
+                target_modules.append(full_name)
+
+    return target_modules
+
+
 def build_router_target_modules(model_type: str = "olmoe_1b_7b_instruct", model=None) -> list[str]:
     """
     Target all router gates for LoRA by model family.
+    For custom modules like MoEGate, targets Linear layers within them.
     """
     names = _module_names(model)
 
     if model_type == "deepseek_moe_16b_chat":
         # Probe for router naming variants across DeepSeek implementations.
         if _has_suffix(names, "mlp.router"):
+            linear_mods = _find_linear_modules_in_parent(model, "mlp.router")
+            if linear_mods:
+                return linear_mods
             return ["mlp.router"]
         if _has_suffix(names, "mlp.gate"):
+            linear_mods = _find_linear_modules_in_parent(model, "mlp.gate")
+            if linear_mods:
+                return linear_mods
             return ["mlp.gate"]
         if _has_suffix(names, "gate"):
+            linear_mods = _find_linear_modules_in_parent(model, "gate")
+            if linear_mods:
+                return linear_mods
             return ["gate"]
-        return ["mlp.gate"]
 
     if _has_suffix(names, "mlp.gate"):
+        linear_mods = _find_linear_modules_in_parent(model, "mlp.gate")
+        if linear_mods:
+            return linear_mods
         return ["mlp.gate"]
     return ["mlp.gate"]
 
