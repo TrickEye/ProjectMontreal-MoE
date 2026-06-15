@@ -11,7 +11,7 @@ import shutil
 import logging
 import torch
 from transformers import TrainingArguments, Trainer
-from peft import LoraConfig, get_peft_model, TaskType
+from peft import LoraConfig, get_peft_model, TaskType, prepare_model_for_kbit_training
 
 from lora_gate_adapter import (
     apply_lora_to_moe_gates,
@@ -227,6 +227,11 @@ def train_stage1_router(model, tokenizer, train_dataset, val_dataset,
     if model_type == "deepseek_moe_16b_chat":
         # ── DeepSeek custom MoEGate path ────────────────────────────────────
         logger.info("DeepSeekMoE detected — using LoRAGateAdapter for router gates")
+
+        # prepare_model_for_kbit_training enables gradient checkpointing,
+        # casts LayerNorm to fp32, and (crucially) signals to the HuggingFace
+        # Trainer that this quantized model is ready for fine-tuning.
+        model = prepare_model_for_kbit_training(model)
 
         lora_r = train_kwargs.pop("lora_r", 8)
         lora_alpha = train_kwargs.pop("lora_alpha", 32)
