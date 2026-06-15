@@ -95,8 +95,13 @@ class LoRAGateAdapter(nn.Module):
         # ── Trainable LoRA parameters (always float32, never quantized) ────
         # A ∈ R^{r × gating_dim}   — compresses hidden_dim → rank
         # B ∈ R^{n_experts × r}    — expands rank → n_experts
-        self.lora_A = nn.Parameter(torch.empty(lora_r, self.gating_dim))
-        self.lora_B = nn.Parameter(torch.empty(self.n_routed_experts, lora_r))
+        adapter_device = original_gate.weight.device
+        self.lora_A = nn.Parameter(
+            torch.empty(lora_r, self.gating_dim, device=adapter_device)
+        )
+        self.lora_B = nn.Parameter(
+            torch.empty(self.n_routed_experts, lora_r, device=adapter_device)
+        )
 
         self._reset_lora_parameters()
 
@@ -116,6 +121,8 @@ class LoRAGateAdapter(nn.Module):
         """
         orig_weight = self.original_gate.weight  # dequantized, [E, H]
         delta = (self.lora_B @ self.lora_A) * self.scaling  # [E, H]
+        if delta.device != orig_weight.device or delta.dtype != orig_weight.dtype:
+            delta = delta.to(device=orig_weight.device, dtype=orig_weight.dtype)
         return orig_weight + delta
 
     def forward(self, hidden_states: torch.Tensor):
@@ -215,6 +222,8 @@ class LoRAGateAdapter(nn.Module):
         the parameter. Test quantization fidelity before relying on this.
         """
         delta = (self.lora_B @ self.lora_A) * self.scaling
+        if delta.device != self.original_gate.weight.device:
+            delta = delta.to(self.original_gate.weight.device)
         self.original_gate.weight.data = self.original_gate.weight.data + delta
         nn.init.zeros_(self.lora_A)
         nn.init.zeros_(self.lora_B)
