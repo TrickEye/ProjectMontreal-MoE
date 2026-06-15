@@ -3,7 +3,7 @@
 R-SEFT: Reasoning Specialized Expert Fine-Tuning for MoE Models.
 
 Complete pipeline:
-  Stage 1 — Router Unmasking: full-parameter fine-tune router gates on reasoning data
+  Stage 1 — Router Unmasking: LoRA fine-tune router gates on reasoning data
   Stage 2 — RFAR Analysis: Identify reasoning experts via high-entropy token analysis
   Stage 3 — Expert Fine-Tuning: LoRA only on selected reasoning experts
   Eval   — Compare base, router-tuned, and expert-tuned accuracy
@@ -24,7 +24,7 @@ import numpy as np
 from model_utils import set_seed, load_model_and_tokenizer, infer_model_type
 from data_utils import load_gsm8k, format_prompt, format_full_sample, tokenize_batch
 from hook_rfar import run_rfar_analysis
-from train import train_stage1_router, train_stage3_experts, load_stage1_router_weights
+from train import train_stage1_router, train_stage3_experts
 from evaluate import evaluate
 
 logging.basicConfig(
@@ -167,8 +167,9 @@ def main():
         model, tokenizer = load_model_and_tokenizer(args.model_path, resolved_model_type)
 
         if not args.stage2_use_base and os.path.exists(stage1_path):
-            logger.info("Loading Stage-1 router weights for RFAR analysis...")
-            model = load_stage1_router_weights(model, stage1_path)
+            logger.info("Loading Stage-1 router adapter for RFAR analysis...")
+            from peft import PeftModel
+            model = PeftModel.from_pretrained(model, stage1_path)
         else:
             logger.info("Using base model for RFAR analysis")
 
@@ -261,8 +262,9 @@ def main():
         # 2) Router-tuned model (Stage 1)
         if os.path.exists(stage1_path):
             logger.info("\n--- Evaluating: Router-Tuned Model ---")
+            from peft import PeftModel
             model, tokenizer = load_model_and_tokenizer(args.model_path, resolved_model_type)
-            model = load_stage1_router_weights(model, stage1_path)
+            model = PeftModel.from_pretrained(model, stage1_path)
             router_result = evaluate(model, tokenizer, test_samples,
                                      max_seq_length=args.max_seq_length,
                                      model_type=resolved_model_type)
