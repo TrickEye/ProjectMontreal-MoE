@@ -38,10 +38,18 @@ def _run_custom_gate_training(model, tokenizer, train_dataset,
     """Train custom LoRAGateAdapter modules without HuggingFace Trainer."""
     del seed  # kept for signature parity with run_training
 
+    def _collate_batch(features):
+        batch = {}
+        for key in features[0].keys():
+            values = [feature[key] for feature in features]
+            batch[key] = torch.stack([torch.as_tensor(value) for value in values])
+        return batch
+
     train_loader = DataLoader(
         train_dataset,
         batch_size=per_device_batch_size,
         shuffle=True,
+        collate_fn=_collate_batch,
     )
     device = next(model.parameters()).device
     trainable_params = [p for p in model.parameters() if p.requires_grad]
@@ -59,7 +67,8 @@ def _run_custom_gate_training(model, tokenizer, train_dataset,
     )
 
     use_amp = device.type == "cuda"
-    scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+    amp_device_type = "cuda" if use_amp else "cpu"
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp) if use_amp else None
     model.train()
     optimizer.zero_grad(set_to_none=True)
     update_step = 0
@@ -75,7 +84,7 @@ def _run_custom_gate_training(model, tokenizer, train_dataset,
                 for key, value in batch.items()
             }
 
-            with torch.cuda.amp.autocast(enabled=use_amp):
+            with torch.amp.autocast(amp_device_type, enabled=use_amp):
                 outputs = model(**batch)
                 loss = outputs.loss / grad_accum_steps
 
