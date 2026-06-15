@@ -8,9 +8,11 @@ Two training stages:
 
 import os
 import shutil
+import math
 import logging
 import torch
-from transformers import TrainingArguments, Trainer
+from torch.utils.data import DataLoader
+from transformers import TrainingArguments, Trainer, get_cosine_schedule_with_warmup
 from peft import LoraConfig, get_peft_model, TaskType, prepare_model_for_kbit_training
 
 from lora_gate_adapter import (
@@ -19,6 +21,106 @@ from lora_gate_adapter import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _has_custom_gate_adapters(model) -> bool:
+    """Return True when the model contains LoRAGateAdapter modules."""
+    return any(module.__class__.__name__ == "LoRAGateAdapter" for module in model.modules())
+
+
+def _run_custom_gate_training(model, tokenizer, train_dataset,
+                              output_dir: str, num_epochs: int = 3,
+                              lr: float = 3e-4,
+                              per_device_batch_size: int = 1,
+                              grad_accum_steps: int = 4,
+                              seed: int = 42,
+                              skip_save: bool = False) -> str:
+    """Train custom LoRAGateAdapter modules without HuggingFace Trainer."""
+    del seed  # kept for signature parity with run_training
+
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=per_device_batch_size,
+        shuffle=True,
+    )
+    device = next(model.parameters()).device
+    trainable_params = [p for p in model.parameters() if p.requires_grad]
+
+    if not trainable_params:
+        raise ValueError("No trainable parameters found for custom gate training.")
+
+    optimizer = torch.optim.AdamW(trainable_params, lr=lr)
+    total_update_steps = max(1, math.ceil(len(train_loader) / max(1, grad_accum_steps)) * num_epochs)
+    warmup_steps = max(0, int(total_update_steps * 0.1))
+    scheduler = get_cosine_schedule_with_warmup(
+        optimizer,
+        num_warmup_steps=warmup_steps,
+        num_training_steps=total_update_steps,
+    )
+
+    use_amp = device.type == "cuda"
+    scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+    model.train()
+    optimizer.zero_grad(set_to_none=True)
+    update_step = 0
+
+    logger.info("Using manual optimization loop for custom LoRAGateAdapter training")
+    logger.info("Trainable parameters: %s", f"{sum(p.numel() for p in trainable_params):,}")
+
+    for epoch in range(num_epochs):
+        running_loss = 0.0
+        for step, batch in enumerate(train_loader, start=1):
+            batch = {
+                key: value.to(device) if torch.is_tensor(value) else value
+                for key, value in batch.items()
+            }
+
+            with torch.cuda.amp.autocast(enabled=use_amp):
+                outputs = model(**batch)
+                loss = outputs.loss / grad_accum_steps
+
+            if use_amp:
+                scaler.scale(loss).backward()
+            else:
+                loss.backward()
+
+            running_loss += loss.detach().float().item() * grad_accum_steps
+
+            should_step = (step % grad_accum_steps == 0) or (step == len(train_loader))
+            if should_step:
+                if use_amp:
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    optimizer.step()
+                scheduler.step()
+                optimizer.zero_grad(set_to_none=True)
+                update_step += 1
+
+                if update_step % 10 == 0:
+                    avg_loss = running_loss / max(1, min(step, len(train_loader)))
+                    logger.info(
+                        "Epoch %d/%d | update %d/%d | loss=%.4f",
+                        epoch + 1,
+                        num_epochs,
+                        update_step,
+                        total_update_steps,
+                        avg_loss,
+                    )
+
+        logger.info(
+            "Finished epoch %d/%d | avg_loss=%.4f",
+            epoch + 1,
+            num_epochs,
+            running_loss / max(1, len(train_loader)),
+        )
+
+    if not skip_save:
+        os.makedirs(output_dir, exist_ok=True)
+        save_gate_lora_weights(model, output_dir)
+        tokenizer.save_pretrained(output_dir)
+
+    return output_dir
 
 
 # ── LoRA target module builders ──────────────────────────────────────────────
@@ -164,6 +266,20 @@ def run_training(model, tokenizer, train_dataset, val_dataset,
     Returns:
         output_dir path
     """
+    if _has_custom_gate_adapters(model):
+        return _run_custom_gate_training(
+            model,
+            tokenizer,
+            train_dataset,
+            output_dir=output_dir,
+            num_epochs=num_epochs,
+            lr=lr,
+            per_device_batch_size=per_device_batch_size,
+            grad_accum_steps=grad_accum_steps,
+            seed=seed,
+            skip_save=skip_save,
+        )
+
     training_args = TrainingArguments(
         output_dir=output_dir,
         overwrite_output_dir=True,
