@@ -13,6 +13,11 @@ import torch
 from transformers import TrainingArguments, Trainer
 from peft import LoraConfig, get_peft_model, TaskType
 
+from lora_gate_adapter import (
+    apply_lora_to_moe_gates,
+    save_gate_lora_weights,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -141,19 +146,20 @@ def run_training(model, tokenizer, train_dataset, val_dataset,
                  output_dir: str, num_epochs: int = 3, lr: float = 3e-4,
                  per_device_batch_size: int = 1, grad_accum_steps: int = 4,
                  max_seq_length: int = 512, seed: int = 42,
-                 remove_tmp: bool = True) -> str:
+                 remove_tmp: bool = True,
+                 skip_save: bool = False) -> str:
     """
-    Run LoRA fine-tuning with the given target modules already configured on the model.
-    Uses HuggingFace Trainer with standard SFT settings.
+    Run fine-tuning with HuggingFace Trainer.
 
     Args:
-        model: PEFT-wrapped model (LoRA already applied)
+        model: model with LoRA / adapter already applied (PEFT or custom).
         tokenizer: tokenizer
         train_dataset: HF Dataset with 'input_ids', 'attention_mask', 'labels'
         val_dataset: HF Dataset
         output_dir: where to save the final adapter
         num_epochs, lr, per_device_batch_size, grad_accum_steps, max_seq_length, seed
         remove_tmp: whether to delete intermediate checkpoints
+        skip_save: if True, skip model.save_pretrained (caller handles saving).
 
     Returns:
         output_dir path
@@ -184,13 +190,15 @@ def run_training(model, tokenizer, train_dataset, val_dataset,
         processing_class=tokenizer,
     )
 
-    logger.info(f"Trainable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad):,}")
+    trainable_count = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    logger.info(f"Trainable parameters: {trainable_count:,}")
     trainer.train()
 
-    # Save final adapter
-    os.makedirs(output_dir, exist_ok=True)
-    model.save_pretrained(output_dir)
-    tokenizer.save_pretrained(output_dir)
+    if not skip_save:
+        # Save final adapter (PEFT path)
+        os.makedirs(output_dir, exist_ok=True)
+        model.save_pretrained(output_dir)
+        tokenizer.save_pretrained(output_dir)
 
     return output_dir
 
@@ -204,30 +212,60 @@ def train_stage1_router(model, tokenizer, train_dataset, val_dataset,
     Stage 1 — Router Unmasking:
     LoRA fine-tune ONLY the router gates on the reasoning dataset.
 
-    This removes the pretrained load-balancing constraint and lets the router
-    learn to map inputs to the most appropriate experts for reasoning.
+    For DeepSeekMoE models (custom MoEGate, not nn.Linear), uses a
+    LoRAGateAdapter that wraps each gate module — compatible with 4-bit
+    quantization since the new lora_A / lora_B are float tensors.
+
+    For OLMoE and other models with standard nn.Linear gates, uses PEFT LoRA.
     """
     logger.info("=" * 60)
     logger.info("Stage 1: Router Unmasking (LoRA on router gates only)")
     logger.info("=" * 60)
 
-    target_modules = build_router_target_modules(model_type=model_type, model=model)
-    logger.info(f"Target modules: {target_modules}")
-
-    lora_config = LoraConfig(
-        r=8,
-        lora_alpha=32,
-        target_modules=target_modules,
-        lora_dropout=0.1,
-        bias="none",
-        task_type=TaskType.CAUSAL_LM,
-    )
-
-    model = get_peft_model(model, lora_config)
-
     output_dir = os.path.join(save_path, "stage1_router")
-    run_training(model, tokenizer, train_dataset, val_dataset,
-                 output_dir=output_dir, **train_kwargs)
+
+    if model_type == "deepseek_moe_16b_chat":
+        # ── DeepSeek custom MoEGate path ────────────────────────────────────
+        logger.info("DeepSeekMoE detected — using LoRAGateAdapter for router gates")
+
+        lora_r = train_kwargs.pop("lora_r", 8)
+        lora_alpha = train_kwargs.pop("lora_alpha", 32)
+        lora_dropout = train_kwargs.pop("lora_dropout", 0.1)
+
+        num_adapted = apply_lora_to_moe_gates(
+            model,
+            lora_r=lora_r,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
+        )
+        logger.info(f"Adapted {num_adapted} MoEGate(s) with LoRA (r={lora_r})")
+
+        # Train — skip the default save (quantized model can't be saved naively)
+        run_training(model, tokenizer, train_dataset, val_dataset,
+                     output_dir=output_dir, skip_save=True, **train_kwargs)
+
+        # Save only the LoRA gate adapter weights
+        save_gate_lora_weights(model, output_dir)
+        tokenizer.save_pretrained(output_dir)
+
+    else:
+        # ── Standard PEFT LoRA path (OLMoE, etc.) ───────────────────────────
+        target_modules = build_router_target_modules(model_type=model_type, model=model)
+        logger.info(f"Target modules: {target_modules}")
+
+        lora_config = LoraConfig(
+            r=8,
+            lora_alpha=32,
+            target_modules=target_modules,
+            lora_dropout=0.1,
+            bias="none",
+            task_type=TaskType.CAUSAL_LM,
+        )
+
+        model = get_peft_model(model, lora_config)
+
+        run_training(model, tokenizer, train_dataset, val_dataset,
+                     output_dir=output_dir, **train_kwargs)
 
     logger.info(f"Stage 1 adapter saved to: {output_dir}")
     return output_dir

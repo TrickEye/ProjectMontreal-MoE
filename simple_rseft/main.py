@@ -26,6 +26,10 @@ from data_utils import load_gsm8k, format_prompt, format_full_sample, tokenize_b
 from hook_rfar import run_rfar_analysis
 from train import train_stage1_router, train_stage3_experts
 from evaluate import evaluate
+from lora_gate_adapter import (
+    is_gate_lora_adapter_dir,
+    load_gate_lora_weights,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -168,8 +172,11 @@ def main():
 
         if not args.stage2_use_base and os.path.exists(stage1_path):
             logger.info("Loading Stage-1 router adapter for RFAR analysis...")
-            from peft import PeftModel
-            model = PeftModel.from_pretrained(model, stage1_path)
+            if is_gate_lora_adapter_dir(stage1_path):
+                load_gate_lora_weights(model, stage1_path)
+            else:
+                from peft import PeftModel
+                model = PeftModel.from_pretrained(model, stage1_path)
         else:
             logger.info("Using base model for RFAR analysis")
 
@@ -262,9 +269,12 @@ def main():
         # 2) Router-tuned model (Stage 1)
         if os.path.exists(stage1_path):
             logger.info("\n--- Evaluating: Router-Tuned Model ---")
-            from peft import PeftModel
             model, tokenizer = load_model_and_tokenizer(args.model_path, resolved_model_type)
-            model = PeftModel.from_pretrained(model, stage1_path)
+            if is_gate_lora_adapter_dir(stage1_path):
+                load_gate_lora_weights(model, stage1_path)
+            else:
+                from peft import PeftModel
+                model = PeftModel.from_pretrained(model, stage1_path)
             router_result = evaluate(model, tokenizer, test_samples,
                                      max_seq_length=args.max_seq_length,
                                      model_type=resolved_model_type)
