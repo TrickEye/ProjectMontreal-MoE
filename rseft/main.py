@@ -81,6 +81,10 @@ def run_phase1(config):
     model, tokenizer = load_model_and_tokenizer(config)
     train_texts, val_texts, test_dataset = load_gsm8k(config)
 
+    # Inspect model structure (debug: print parameter name patterns)
+    from model_utils import inspect_param_patterns
+    inspect_param_patterns(model)
+
     # Inspect MoE structure
     moe_info = get_moe_layer_info(model)
 

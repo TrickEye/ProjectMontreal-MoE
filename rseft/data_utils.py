@@ -8,6 +8,7 @@ Handles:
 """
 
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 from datasets import load_dataset
 
@@ -74,8 +75,6 @@ class TokenizedDataset(Dataset):
 
 def collate_fn(batch):
     """Pad batch of variable-length sequences."""
-    import torch.nn.functional as F
-
     max_len = max(item["input_ids"].size(0) for item in batch)
 
     input_ids = []

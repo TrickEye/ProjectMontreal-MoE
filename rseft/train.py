@@ -195,6 +195,24 @@ def train(model, tokenizer, train_texts, val_texts, config, phase: str):
     Returns:
         trained model
     """
+    # ── Safety check: verify trainable parameters exist ─────────────────
+    trainable_params = [p for p in model.parameters() if p.requires_grad]
+    if len(trainable_params) == 0:
+        print("\n  ❌ FATAL: No trainable parameters found!")
+        print("  All parameters have requires_grad=False.")
+        print("  The loss will have no grad_fn and backward() will fail.")
+        print("  Check that freeze_all_except_*() correctly identified parameters.")
+        print("  Running parameter inspection...")
+        from model_utils import inspect_param_patterns
+        inspect_param_patterns(model)
+        raise RuntimeError(
+            f"No trainable parameters in Phase {'1 (Router Unmasking)' if phase == 'phase1' else '3 (Expert Fine-Tuning)'}. "
+            "Check the model's parameter naming convention."
+        )
+    print(f"  ✓ {len(trainable_params)} parameter groups are trainable "
+          f"({sum(p.numel() for p in trainable_params):,} total)")
+
+    # ── Phase config ───────────────────────────────────────────────────
     epochs = config.phase1_epochs if phase == "phase1" else config.phase3_epochs
     batch_size = (
         config.phase1_batch_size if phase == "phase1" else config.phase3_batch_size

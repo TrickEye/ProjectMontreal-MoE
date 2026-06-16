@@ -11,7 +11,7 @@ from typing import Optional
 @dataclass
 class RSEFTConfig:
     # ── Model ──────────────────────────────────────────────
-    model_name: str = "allenai/OLMoE-1B-7B-0924"
+    model_name: str = "allenai/OLMoE-1B-7B-0924-Instruct"
     tokenizer_name: Optional[str] = None  # defaults to model_name
 
     # ── Dataset ────────────────────────────────────────────
