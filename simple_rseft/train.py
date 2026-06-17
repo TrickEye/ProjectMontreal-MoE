@@ -36,14 +36,12 @@ def build_router_target_modules(model_type: str = "olmoe_1b_7b_instruct", model=
     names = _module_names(model)
 
     if model_type == "deepseek_moe_16b_chat":
-        # Probe for router naming variants across DeepSeek implementations.
-        if _has_suffix(names, "mlp.router"):
-            return ["mlp.router"]
-        if _has_suffix(names, "mlp.gate"):
-            return ["mlp.gate"]
-        if _has_suffix(names, "gate"):
-            return ["gate"]
-        return ["mlp.gate"]
+        # Wrap ds model's router gate to selfdef wrapper
+        from .dswrapper import PatchedMoEGate
+        for name, module in model.named_modules():
+            if module.__class__.__name__ == "DeepseekMoE": # replace all MoEGate
+                module.gate = PatchedMoEGate(module.gate) 
+        return ["router_linear"]
 
     if _has_suffix(names, "mlp.gate"):
         return ["mlp.gate"]
@@ -72,6 +70,7 @@ def build_expert_target_modules(selected_experts: list, num_layers: int,
     Returns:
         list of module name substrings for PEFT LoRA targeting
     """
+    raise NotImplementedError("This function needs to be updated to handle the new PatchedMoEGate structure for DeepSeekMoE. The target module names will depend on how the PatchedMoEGate exposes the expert parameters. Please update this function accordingly.")
     names = _module_names(model)
     if model_type == "deepseek_moe_16b_chat":
         # Prefer routed_experts when available, fallback to experts for variants.
@@ -193,6 +192,7 @@ def train_stage1_router(model, tokenizer, train_dataset, val_dataset,
     )
 
     model = get_peft_model(model, lora_config)
+    model.print_trainable_parameters()
 
     output_dir = os.path.join(save_path, "stage1_router")
     run_training(model, tokenizer, train_dataset, val_dataset,
