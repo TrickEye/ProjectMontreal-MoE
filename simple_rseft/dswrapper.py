@@ -15,6 +15,7 @@ class PatchedMoEGate(nn.Module):
         n_experts, hidden = gate.weight.shape
         self.router_linear = nn.Linear(hidden, n_experts, bias=False)
         self.router_linear.weight.data.copy_(gate.weight.data)  # 迁移原始权重
+        self.router_linear.to(gate.weight.device, dtype=gate.weight.dtype)
 
     def forward(self, hidden_states):
         bsz, seq_len, h = hidden_states.shape

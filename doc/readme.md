@@ -28,6 +28,8 @@ pip install torch transformers datasets peft bitsandbytes accelerate
 # Quick smoke test (200 samples)
 python main.py --model_path allenai/OLMoE-1B-7B-0924-Instruct --max_samples 200
 
+python main.py --model_path deepseek-ai/deepseek-moe-16b-chat --max_samples 200
+
 # Skip stages you already ran
 python main.py --model_path <path> --skip_stage1 --skip_stage2
 ```

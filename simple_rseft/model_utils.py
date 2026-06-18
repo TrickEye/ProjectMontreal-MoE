@@ -143,8 +143,8 @@ def load_model_and_tokenizer(model_path: str, model_type: str = "auto"):
     model = AutoModelForCausalLM.from_pretrained(
         model_path,
         quantization_config=quant_config,
-        torch_dtype=torch.float16,
-        device_map="auto",
+        # torch_dtype=torch.float16,
+        # device_map="auto",
         trust_remote_code=True,
     )
 

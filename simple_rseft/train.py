@@ -37,7 +37,7 @@ def build_router_target_modules(model_type: str = "olmoe_1b_7b_instruct", model=
 
     if model_type == "deepseek_moe_16b_chat":
         # Wrap ds model's router gate to selfdef wrapper
-        from .dswrapper import PatchedMoEGate
+        from dswrapper import PatchedMoEGate
         for name, module in model.named_modules():
             if module.__class__.__name__ == "DeepseekMoE": # replace all MoEGate
                 module.gate = PatchedMoEGate(module.gate) 
@@ -137,10 +137,10 @@ def run_training(model, tokenizer, train_dataset, val_dataset,
         warmup_ratio=0.1,
         logging_steps=10,
         save_strategy="no",  # don't save intermediates for simplicity
-        eval_strategy="no",
+        evaluation_strategy="no",
         seed=seed,
         data_seed=seed,
-        fp16=True,
+        bf16=True,
         report_to=None,  # no wandb
         remove_unused_columns=False,
     )
@@ -149,7 +149,7 @@ def run_training(model, tokenizer, train_dataset, val_dataset,
         model=model,
         args=training_args,
         train_dataset=train_dataset,
-        processing_class=tokenizer,
+        tokenizer=tokenizer,
     )
 
     logger.info(f"Trainable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad):,}")
