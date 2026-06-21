@@ -126,7 +126,7 @@ def main():
     stage1_path = os.path.join(args.save_path, "stage1_router")
 
     if not args.skip_stage1:
-        logger.info("\n" + "=" * 60)
+        logger.info("=" * 60)
         logger.info("STAGE 1: Router Unmasking")
         logger.info("=" * 60)
 

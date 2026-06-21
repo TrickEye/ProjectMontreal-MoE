@@ -58,7 +58,7 @@ def format_full_sample(question: str, reasoning: str, answer: str,
     return format_chat(user=math_prompt, assistant=completion, model_type=model_type)
 
 
-def tokenize_batch(tokenizer, prompts: list[str], completions: list[str] = None,
+def tokenize_batch_legacy(tokenizer, prompts: list[str], completions: list[str] = None,
                    max_length: int = 1024):
     """
     Tokenize prompts (and optionally completions) for training or inference.
@@ -66,6 +66,7 @@ def tokenize_batch(tokenizer, prompts: list[str], completions: list[str] = None,
     Returns tokenized dict with input_ids, attention_mask, and labels (if completions given).
     Labels have prompt portion set to -100 for SFT loss masking.
     """
+    assert False, "modified"
     if completions is not None:
         # Training mode: tokenize full texts, then mask prompt portion
         full_texts = [p + c for p, c in zip(prompts, completions)]
@@ -101,5 +102,52 @@ def tokenize_batch(tokenizer, prompts: list[str], completions: list[str] = None,
             max_length=max_length,
             return_tensors="pt",
         )
+
+    return Dataset.from_dict(tokenized)
+
+def tokenize_batch(tokenizer, prompts: list[str], completions: list[str] = None,
+                    max_length: int = 1024):
+    # SFT 训练阶段强制右侧 padding，避免 left-padding 导致 mask 错位
+    original_padding_side = tokenizer.padding_side
+    tokenizer.padding_side = "right"
+
+    try:
+        if completions is not None:
+            full_texts = [p + c for p, c in zip(prompts, completions)]
+            tokenized = tokenizer(
+                full_texts,
+                padding=True,
+                truncation=True,
+                max_length=max_length,
+                return_tensors="pt",
+            )
+
+            prompt_tokenized = tokenizer(
+                prompts,
+                padding=True,
+                truncation=True,
+                max_length=max_length,
+                return_tensors="pt",
+            )
+
+            labels = tokenized["input_ids"].clone()
+            for i in range(len(prompts)):
+                prompt_len = prompt_tokenized["attention_mask"][i].sum().item()
+                labels[i, :prompt_len] = -100
+
+            # 关键修复：把 padding 位置也设成 -100，不参与 loss 计算
+            labels[tokenized["attention_mask"] == 0] = -100
+
+            tokenized["labels"] = labels
+        else:
+            tokenized = tokenizer(
+                prompts,
+                padding=True,
+                truncation=True,
+                max_length=max_length,
+                return_tensors="pt",
+            )
+    finally:
+        tokenizer.padding_side = original_padding_side
 
     return Dataset.from_dict(tokenized)

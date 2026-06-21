@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+assert False, "no use currently"
+
 class PatchedMoEGate(nn.Module):
     """把 MoEGate.weight (nn.Parameter) 换成 nn.Linear，使 PEFT 可以识别"""
     def __init__(self, gate):
