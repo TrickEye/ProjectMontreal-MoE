@@ -101,6 +101,49 @@ def collect_expert_activations(model, tokenizer, samples: list[dict], device: st
     all_fork_masks = []
     all_entropy = []
 
+    if model_type == "deepseek_moe_16b_chat": # DS does not support output_router_logits, walkaround
+        import torch.nn.functional as F
+        
+        class RouterLogitsCollector:
+            """外部采集 DeepSeek-MoE 每层 MoEGate 的原始 router logits"""
+
+            def __init__(self, model):
+                self.router_logits = []
+                self.hooks = []
+                self.gate_names = []  # 记录命中的模块名,方便调试核对层数是否对得上
+
+                for name, module in model.named_modules():
+                    # 按类名匹配,而不是 isinstance(导入路径可能因 trust_remote_code 动态加载而对不上)
+                    if type(module).__name__ == "MoEGate":
+                        self.hooks.append(module.register_forward_pre_hook(self._hook))
+                        self.gate_names.append(name)
+
+                if not self.gate_names:
+                    raise RuntimeError(
+                        "没有在模型里找到任何 MoEGate 模块,请检查模型是否真的是 DeepSeek-MoE 架构,"
+                        "或者 trust_remote_code 加载的类名是否被改写过。"
+                    )
+
+            def _hook(self, module, inputs):
+                hidden_states = inputs[0]                      # (B, S, H)
+                bsz, seq_len, h = hidden_states.shape
+                hs = hidden_states.reshape(-1, h)               # (B*S, H)
+                logits = F.linear(hs, module.weight, None)      # (B*S, E)
+                logits = logits.view(bsz, seq_len, -1)           # 还原成 (B, S, E)
+                self.router_logits.append(logits)
+
+            def clear(self):
+                self.router_logits = []
+
+            def remove(self):
+                for h in self.hooks:
+                    h.remove()
+
+        collector = RouterLogitsCollector(model)
+    else:
+        assert False, "this branch is only for DS model."
+        collector = "no such thing"
+
     model.eval()
     with torch.no_grad():
         for sample in tqdm(samples, desc="Collecting expert activations"):
@@ -127,10 +170,12 @@ def collect_expert_activations(model, tokenizer, samples: list[dict], device: st
             if inputs["input_ids"].shape[1] < 2:
                 continue
 
-            outputs = model(**inputs, output_router_logits=True, return_dict=True)
+            collector.clear()                 # 每次 forward 前清空，避免累积
+            outputs = model(**inputs, return_dict=True)
+            router_logits = tuple(collector.router_logits)
 
             # Router logits: tuple of [B=1, S, E] tensors, one per MoE layer
-            router_logits_list = outputs.router_logits
+            router_logits_list = router_logits
             if len(router_logits_list) == 0:
                 continue
 

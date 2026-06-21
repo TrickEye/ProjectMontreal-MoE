@@ -159,7 +159,7 @@ def main():
     rfar_path = os.path.join(args.save_path, "rfar_results.json")
 
     if not args.skip_stage2:
-        logger.info("\n" + "=" * 60)
+        logger.info("=" * 60)
         logger.info("STAGE 2: RFAR Analysis (identify reasoning experts)")
         logger.info("=" * 60)
 
@@ -202,7 +202,7 @@ def main():
     stage3_path = os.path.join(args.save_path, "stage3_experts")
 
     if not args.skip_stage3:
-        logger.info("\n" + "=" * 60)
+        logger.info("=" * 60)
         logger.info("STAGE 3: Reasoning Expert Fine-Tuning")
         logger.info("=" * 60)
 
