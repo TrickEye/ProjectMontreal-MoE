@@ -21,7 +21,7 @@ import argparse
 import torch
 import numpy as np
 
-from model_utils import set_seed, load_model_and_tokenizer, infer_model_type
+from model_utils import set_seed, load_model_and_tokenizer, infer_model_type, save_router_weights, load_router_weights
 from data_utils import load_gsm8k, format_prompt, format_full_sample, tokenize_batch
 from hook_rfar import run_rfar_analysis
 from train import train_stage1_router, train_stage3_experts
@@ -44,7 +44,7 @@ def parse_args():
     p.add_argument("--model_type", type=str, default="auto",
                    choices=["auto", "olmoe_1b_7b_instruct", "deepseek_moe_16b_chat"],
                    help="Model family key. Use auto to infer from model_path")
-    p.add_argument("--max_samples", type=int, default=200,
+    p.add_argument("--max_samples", type=int, default=-1,
                    help="Max training samples for hook/stages (smaller = faster)")
     p.add_argument("--max_seq_length", type=int, default=512,
                    help="Max token length for training and hook")
@@ -151,6 +151,11 @@ def main():
             seed=args.seed,
         )
 
+        save_router_weights(
+            model,
+            output_dir=args.save_path
+        )
+
         # Free GPU memory
         del model
         torch.cuda.empty_cache()
@@ -170,6 +175,11 @@ def main():
             logger.info("Loading Stage-1 router adapter for RFAR analysis...")
             from peft import PeftModel
             model = PeftModel.from_pretrained(model, stage1_path)
+
+            load_router_weights(
+                model,
+                checkpoint_dir=args.save_path
+            )
         else:
             logger.info("Using base model for RFAR analysis")
 
@@ -288,7 +298,7 @@ def main():
             expert_result = None
 
         # ── Summary ───────────────────────────────────────────────────────
-        logger.info("\n" + "=" * 60)
+        logger.info("=" * 60)
         logger.info("RESULTS SUMMARY")
         logger.info("=" * 60)
         logger.info(f"  Base model accuracy:         {base_result['accuracy']:.4f}")

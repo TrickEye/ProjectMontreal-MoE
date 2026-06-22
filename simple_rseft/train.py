@@ -68,7 +68,6 @@ def build_expert_target_modules(selected_experts: list, num_layers: int,
     Returns:
         list of module name substrings for PEFT LoRA targeting
     """
-    raise NotImplementedError("This function needs to be updated to handle the new PatchedMoEGate structure for DeepSeekMoE. The target module names will depend on how the PatchedMoEGate exposes the expert parameters. Please update this function accordingly.")
     names = _module_names(model)
     if model_type == "deepseek_moe_16b_chat":
         # Prefer routed_experts when available, fallback to experts for variants.
@@ -304,6 +303,9 @@ def train_stage3_experts(model, tokenizer, train_dataset, val_dataset,
     )
     logger.info(f"Targeting {len(target_modules)} expert parameter groups "
                 f"across {num_layers} layers")
+    logger.info(f"{target_modules=}")
+
+    model = prepare_model_for_kbit_training(model)
 
     # Show which experts are selected per layer
     for lv in range(num_layers):

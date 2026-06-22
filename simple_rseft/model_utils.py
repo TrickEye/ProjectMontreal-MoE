@@ -153,3 +153,63 @@ def load_model_and_tokenizer(model_path: str, model_type: str = "auto"):
     model.generation_config.do_sample = False
 
     return model, tokenizer
+
+def save_router_weights(model, output_dir: str) -> str:
+    """
+    把 router（MoEGate.weight）的更新后权重单独保存到 output_dir。
+    PEFT 的 save_pretrained 不会保存这些裸 nn.Parameter，必须手动处理。
+
+    保存的 key 去掉 PEFT 注入的 'base_model.model.' 前缀，
+    这样加载时不依赖 PEFT wrapper 的具体层级结构，更健壮。
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    router_state = {}
+    for name, param in model.named_parameters():
+        # 只保存 gate.weight，排除 lora_A / lora_B 等 PEFT 内部参数
+        if "gate.weight" in name and "lora_" not in name:
+            # 'base_model.model.model.layers.1.mlp.gate.weight'
+            #  → 'model.layers.1.mlp.gate.weight'
+            clean_name = name.replace("base_model.model.", "", 1)
+            router_state[clean_name] = param.data.cpu().clone()
+
+    save_path = os.path.join(output_dir, "router_weights.pt")
+    torch.save(router_state, save_path)
+    print(f"Saved {len(router_state)} router weight tensors → {save_path}")
+    return save_path
+
+def load_router_weights(model, checkpoint_dir: str) -> int:
+    """
+    把之前保存的 router 权重加载回模型。
+    可以在任意时刻调用：加载 PEFT adapter 之后，或者直接在 base model 上。
+
+    Returns:
+        成功加载的 tensor 数量
+    """
+    load_path = os.path.join(checkpoint_dir, "router_weights.pt")
+    if not os.path.exists(load_path):
+        raise FileNotFoundError(
+            f"找不到 router 权重文件: {load_path}\n"
+            f"请确认 checkpoint_dir 指向正确的 Stage 1 输出目录。"
+        )
+
+    router_state = torch.load(load_path, map_location="cpu")
+
+    loaded = 0
+    for name, param in model.named_parameters():
+        # 同样去掉前缀后匹配
+        clean_name = name.replace("base_model.model.", "", 1)
+        if clean_name in router_state:
+            param.data.copy_(router_state[clean_name].to(param.device))
+            loaded += 1
+
+    if loaded == 0:
+        raise RuntimeError(
+            "加载了 0 个 router 权重，key 可能不匹配。\n"
+            f"checkpoint 里的 key 示例: {list(router_state.keys())[:3]}\n"
+            f"模型里的 gate 参数名示例: "
+            f"{[n for n, _ in model.named_parameters() if 'gate.weight' in n][:3]}"
+        )
+    
+    return loaded
+

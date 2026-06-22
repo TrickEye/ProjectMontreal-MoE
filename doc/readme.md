@@ -22,21 +22,15 @@ main.py
 
 ## How to run
 ```
+pip install -f requirements.txt
 cd simple_rseft
-pip install torch transformers datasets peft bitsandbytes accelerate
 
 # Quick smoke test (200 samples)
-python main.py --model_path allenai/OLMoE-1B-7B-0924-Instruct --max_samples 200
-
 python main.py --model_path deepseek-ai/deepseek-moe-16b-chat --max_samples 200
+
+## Full run
+python main.py --model_path deepseek-ai/deepseek-moe-16b-chat
 
 # Skip stages you already ran
 python main.py --model_path <path> --skip_stage1 --skip_stage2
 ```
-
-## Simplified from the original codebase
-- Single model (OLMoE) + single dataset (GSM8K) — no 4-model multiplexing
-- No custom modeling_*.py — uses standard output_router_logits=True
-- No shell scripts, wandb, multi-GPU scheduling
-- No t-SNE visualization or analysis scripts
-- Pure Python pipeline with --skip_stage* flags for iterative development
