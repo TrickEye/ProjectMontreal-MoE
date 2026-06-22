@@ -48,7 +48,7 @@ def parse_args():
                    help="Max training samples for hook/stages (smaller = faster)")
     p.add_argument("--max_seq_length", type=int, default=512,
                    help="Max token length for training and hook")
-    p.add_argument("--eval_samples", type=int, default=50,
+    p.add_argument("--eval_samples", type=int, default=-1,
                    help="Max evaluation samples")
     p.add_argument("--seed", type=int, default=42)
 
