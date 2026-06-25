@@ -58,53 +58,6 @@ def format_full_sample(question: str, reasoning: str, answer: str,
     return format_chat(user=math_prompt, assistant=completion, model_type=model_type)
 
 
-def tokenize_batch_legacy(tokenizer, prompts: list[str], completions: list[str] = None,
-                   max_length: int = 1024):
-    """
-    Tokenize prompts (and optionally completions) for training or inference.
-
-    Returns tokenized dict with input_ids, attention_mask, and labels (if completions given).
-    Labels have prompt portion set to -100 for SFT loss masking.
-    """
-    assert False, "modified"
-    if completions is not None:
-        # Training mode: tokenize full texts, then mask prompt portion
-        full_texts = [p + c for p, c in zip(prompts, completions)]
-        tokenized = tokenizer(
-            full_texts,
-            padding=True,
-            truncation=True,
-            max_length=max_length,
-            return_tensors="pt",
-        )
-
-        # Build labels: mask prompt tokens with -100
-        prompt_tokenized = tokenizer(
-            prompts,
-            padding=True,
-            truncation=True,
-            max_length=max_length,
-            return_tensors="pt",
-        )
-
-        labels = tokenized["input_ids"].clone()
-        for i in range(len(prompts)):
-            prompt_len = prompt_tokenized["attention_mask"][i].sum().item()
-            labels[i, :prompt_len] = -100
-
-        tokenized["labels"] = labels
-    else:
-        # Inference mode
-        tokenized = tokenizer(
-            prompts,
-            padding=True,
-            truncation=True,
-            max_length=max_length,
-            return_tensors="pt",
-        )
-
-    return Dataset.from_dict(tokenized)
-
 def tokenize_batch(tokenizer, prompts: list[str], completions: list[str] = None,
                     max_length: int = 1024):
     # SFT 训练阶段强制右侧 padding，避免 left-padding 导致 mask 错位

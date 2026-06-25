@@ -190,32 +190,6 @@ def run_training(model, tokenizer, train_dataset, val_dataset,
         callbacks=[RouterSanityCallback(check_every=1)]
     )
 
-    if False:
-        logger.debug("Debugging")
-        batch = next(iter(trainer.get_train_dataloader()))
-        batch = {k: v.to(model.device) for k, v in batch.items()}
-
-        with torch.no_grad():
-            outputs = model(**batch)
-
-        print("outputs.loss:", outputs.loss)
-        print("是否有 aux_loss 字段:", hasattr(outputs, "aux_loss"))
-        if hasattr(outputs, "aux_loss"):
-            print("aux_loss:", outputs.aux_loss)
-
-        # 检查 labels 里到底有多少个有效 token（非 -100）
-        labels = batch["labels"]
-        valid_ratio = (labels != -100).float().mean().item()
-        print(f"labels 中参与 loss 计算的 token 占比: {valid_ratio:.4f}")
-        # 如果这个比例很低（比如 < 0.1），说明大部分位置被忽略，
-        # 剩下的有效 token 很可能被模型迅速学成 trivial pattern
-
-        # 看看真正参与 loss 的 token 都是什么内容
-        sample_labels = labels[0]
-        visible_ids = sample_labels[sample_labels != -100]
-        print("第一条样本参与 loss 的 token 解码:", tokenizer.decode(visible_ids))
-        logger.debug("Debugging done")
-
     logger.info(f"Trainable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad):,}")
     trainer.train()
 
