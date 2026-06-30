@@ -146,6 +146,7 @@ def load_model_and_tokenizer(model_path: str, model_type: str = "auto"):
         # torch_dtype=torch.float16,
         # device_map="auto",
         trust_remote_code=True,
+        aux_loss_alpha=1e-6, # disable aux loss (default is 0.001, I use a very small amount here)
     )
 
     # Ensure generation config has pad_token_id set
