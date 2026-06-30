@@ -275,6 +275,10 @@ def main():
             from peft import PeftModel
             model, tokenizer = load_model_and_tokenizer(args.model_path, resolved_model_type)
             model = PeftModel.from_pretrained(model, stage1_path)
+            load_router_weights(
+                model,
+                checkpoint_dir=args.save_path
+            )
             router_result = evaluate(model, tokenizer, test_samples,
                                      max_seq_length=args.max_seq_length,
                                      model_type=resolved_model_type)
@@ -289,6 +293,10 @@ def main():
             from peft import PeftModel
             model, tokenizer = load_model_and_tokenizer(args.model_path, resolved_model_type)
             model = PeftModel.from_pretrained(model, stage3_path)
+            load_router_weights(
+                model,
+                checkpoint_dir=args.save_path
+            )
             expert_result = evaluate(model, tokenizer, test_samples,
                                      max_seq_length=args.max_seq_length,
                                      model_type=resolved_model_type)
@@ -305,12 +313,12 @@ def main():
         if router_result:
             logger.info(f"  Router-tuned accuracy:       {router_result['accuracy']:.4f}")
         if expert_result:
-            logger.info(f"  Expert-tuned accuracy:       {expert_result['accuracy']:.4f}")
+            logger.info(f"  Router-Expert-tuned accuracy:{expert_result['accuracy']:.4f}")
 
         summary = {
             "base": base_result["accuracy"],
             "router_tuned": router_result["accuracy"] if router_result else None,
-            "expert_tuned": expert_result["accuracy"] if expert_result else None,
+            "router_expert_tuned": expert_result["accuracy"] if expert_result else None,
         }
         summary_path = os.path.join(args.save_path, "summary.json")
         with open(summary_path, "w") as f:
