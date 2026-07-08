@@ -35,16 +35,6 @@ def build_router_target_modules(model_type: str = "olmoe_1b_7b_instruct", model=
     """
     names = _module_names(model)
 
-    if model_type == "deepseek_moe_16b_chat":
-        # Probe for router naming variants across DeepSeek implementations.
-        if _has_suffix(names, "mlp.router"):
-            return ["mlp.router"]
-        if _has_suffix(names, "mlp.gate"):
-            return ["mlp.gate"]
-        if _has_suffix(names, "gate"):
-            return ["gate"]
-        return ["mlp.gate"]
-
     if _has_suffix(names, "mlp.gate"):
         return ["mlp.gate"]
     return ["mlp.gate"]

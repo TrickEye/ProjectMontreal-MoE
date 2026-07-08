@@ -126,7 +126,7 @@ def main():
     stage1_path = os.path.join(args.save_path, "stage1_router")
 
     if not args.skip_stage1:
-        logger.info("\n" + "=" * 60)
+        logger.info("=" * 60)
         logger.info("STAGE 1: Router Unmasking")
         logger.info("=" * 60)
 
@@ -159,7 +159,7 @@ def main():
     rfar_path = os.path.join(args.save_path, "rfar_results.json")
 
     if not args.skip_stage2:
-        logger.info("\n" + "=" * 60)
+        logger.info("=" * 60)
         logger.info("STAGE 2: RFAR Analysis (identify reasoning experts)")
         logger.info("=" * 60)
 
@@ -169,7 +169,7 @@ def main():
         if not args.stage2_use_base and os.path.exists(stage1_path):
             logger.info("Loading Stage-1 router adapter for RFAR analysis...")
             from peft import PeftModel
-            model = PeftModel.from_pretrained(model, stage1_path)
+            model = PeftModel.from_pretrained(model, stage1_path) # load router-tuned model's router
         else:
             logger.info("Using base model for RFAR analysis")
 
@@ -202,7 +202,7 @@ def main():
     stage3_path = os.path.join(args.save_path, "stage3_experts")
 
     if not args.skip_stage3:
-        logger.info("\n" + "=" * 60)
+        logger.info("=" * 60)
         logger.info("STAGE 3: Reasoning Expert Fine-Tuning")
         logger.info("=" * 60)
 
@@ -246,12 +246,12 @@ def main():
 
     # ── Evaluation ────────────────────────────────────────────────────────
     if not args.skip_eval:
-        logger.info("\n" + "=" * 60)
+        logger.info("=" * 60)
         logger.info("EVALUATION")
         logger.info("=" * 60)
 
         # 1) Base model
-        logger.info("\n--- Evaluating: Base Model ---")
+        logger.info("--- Evaluating: Base Model ---")
         model, tokenizer = load_model_and_tokenizer(args.model_path, resolved_model_type)
         base_result = evaluate(model, tokenizer, test_samples,
                        max_seq_length=args.max_seq_length,
@@ -261,7 +261,7 @@ def main():
 
         # 2) Router-tuned model (Stage 1)
         if os.path.exists(stage1_path):
-            logger.info("\n--- Evaluating: Router-Tuned Model ---")
+            logger.info("--- Evaluating: Router-Tuned Model ---")
             from peft import PeftModel
             model, tokenizer = load_model_and_tokenizer(args.model_path, resolved_model_type)
             model = PeftModel.from_pretrained(model, stage1_path)
@@ -275,7 +275,7 @@ def main():
 
         # 3) Expert-tuned model (Stage 3)
         if os.path.exists(stage3_path):
-            logger.info("\n--- Evaluating: Expert-Tuned Model ---")
+            logger.info("--- Evaluating: Expert-Tuned Model ---")
             from peft import PeftModel
             model, tokenizer = load_model_and_tokenizer(args.model_path, resolved_model_type)
             model = PeftModel.from_pretrained(model, stage3_path)
@@ -288,7 +288,7 @@ def main():
             expert_result = None
 
         # ── Summary ───────────────────────────────────────────────────────
-        logger.info("\n" + "=" * 60)
+        logger.info("=" * 60)
         logger.info("RESULTS SUMMARY")
         logger.info("=" * 60)
         logger.info(f"  Base model accuracy:         {base_result['accuracy']:.4f}")
