@@ -42,7 +42,6 @@ def build_router_target_modules(model_type: str = "olmoe_1b_7b_instruct", model=
 
 def build_expert_target_modules(selected_experts: list, num_layers: int,
                                 model_type: str = "olmoe_1b_7b_instruct",
-                                include_shared_experts: bool = False,
                                 model=None) -> list[str]:
     """
     Build target module list for specific experts across layers.
@@ -63,16 +62,8 @@ def build_expert_target_modules(selected_experts: list, num_layers: int,
         list of module name substrings for PEFT LoRA targeting
     """
     names = _module_names(model)
-    if model_type == "deepseek_moe_16b_chat":
-        # Prefer routed_experts when available, fallback to experts for variants.
-        if _has_suffix(names, ".mlp.routed_experts."):
-            expert_prefix = "layers.{lv}.mlp.routed_experts.{e}"
-        elif _has_suffix(names, ".mlp.experts."):
-            expert_prefix = "layers.{lv}.mlp.experts.{e}"
-        else:
-            expert_prefix = "layers.{lv}.mlp.routed_experts.{e}"
-    else:
-        expert_prefix = "layers.{lv}.mlp.experts.{e}"
+    
+    expert_prefix = "layers.{lv}.mlp.experts.{e}"
 
     targets = []
     for lv in range(num_layers):
@@ -81,15 +72,6 @@ def build_expert_target_modules(selected_experts: list, num_layers: int,
             targets.append(f"{base}.gate_proj")
             targets.append(f"{base}.up_proj")
             targets.append(f"{base}.down_proj")
-
-    if include_shared_experts and model_type == "deepseek_moe_16b_chat":
-        # PEFT substring targeting for shared experts (all layers).
-        if _has_suffix(names, "mlp.shared_experts") or not names:
-            targets.extend([
-                "mlp.shared_experts.gate_proj",
-                "mlp.shared_experts.up_proj",
-                "mlp.shared_experts.down_proj",
-            ])
 
     return targets
 
@@ -195,7 +177,6 @@ def train_stage1_router(model, tokenizer, train_dataset, val_dataset,
 def train_stage3_experts(model, tokenizer, train_dataset, val_dataset,
                          selected_experts: list, num_layers: int,
                          save_path: str, model_type: str = "olmoe_1b_7b_instruct",
-                         include_shared_experts: bool = False,
                          **train_kwargs) -> str:
     """
     Stage 3 — Reasoning Expert Fine-Tuning:
@@ -213,7 +194,6 @@ def train_stage3_experts(model, tokenizer, train_dataset, val_dataset,
         selected_experts,
         num_layers,
         model_type=model_type,
-        include_shared_experts=include_shared_experts,
         model=model,
     )
     logger.info(f"Targeting {len(target_modules)} expert parameter groups "

@@ -69,8 +69,6 @@ def parse_args():
     p.add_argument("--lr", type=float, default=3e-4)
     p.add_argument("--batch_size", type=int, default=1)
     p.add_argument("--grad_accum", type=int, default=4)
-    p.add_argument("--include_shared_experts", action="store_true",
-                   help="For DeepSeekMoE only: also LoRA shared experts in stage 3")
 
     # Output
     p.add_argument("--save_path", type=str, default="./outputs",
@@ -232,7 +230,6 @@ def main():
             num_layers=num_layers,
             save_path=args.save_path,
             model_type=resolved_model_type,
-            include_shared_experts=args.include_shared_experts,
             num_epochs=args.num_epochs,
             lr=args.lr,
             per_device_batch_size=args.batch_size,
