@@ -44,7 +44,7 @@ def parse_args():
     p.add_argument("--model_type", type=str, default="auto",
                    choices=["auto", "olmoe_1b_7b_instruct", "deepseek_moe_16b_chat"],
                    help="Model family key. Use auto to infer from model_path")
-    p.add_argument("--max_samples", type=int, default=200,
+    p.add_argument("--max_samples", type=int, default=-1,
                    help="Max training samples for hook/stages (smaller = faster)")
     p.add_argument("--max_seq_length", type=int, default=512,
                    help="Max token length for training and hook")
